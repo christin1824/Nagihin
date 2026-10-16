@@ -1,1 +1,44 @@
 @import "tailwindcss";
+@keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes modal-pop { from { opacity: 0; transform: translateY(12px) scale(.96) } to { opacity: 1; transform: none } }
+.modal-backdrop { animation: modal-fade .25s ease-out }
+.modal-card { animation: modal-pop .25s cubic-bezier(.16,1,.3,1) }
+
+/* Latar utama halaman admin & penghuni: tosca (atas) -> putih kebiruan (tengah) -> navy (bawah) */
+.app-bg {
+  background-color: #dfe8ea;
+  background-image:
+    radial-gradient(ellipse 90% 55% at 50% 0%, #5aab9a 0%, rgba(90, 171, 154, 0.55) 45%, rgba(90, 171, 154, 0) 100%),
+    radial-gradient(ellipse 90% 55% at 50% 100%, #2c477c 0%, rgba(44, 71, 124, 0.6) 45%, rgba(44, 71, 124, 0) 100%),
+    linear-gradient(to bottom, #8cc4b8 0%, #dfecec 42%, #dfe4ec 58%, #8592b4 100%);
+}
+
+/* Color palette publik: perpaduan biru gradasi (#000f22, #1b3554, #3f6593, #5b86b6, #80aad3, #c0e6fd) dipadukan dengan putih murni */
+.public-bg {
+  background-color: #f0f7fd;
+  background-image:
+    radial-gradient(circle 800px at 15% 10%, rgba(192, 230, 253, 0.75) 0%, rgba(128, 170, 211, 0.35) 40%, transparent 75%),
+    radial-gradient(circle 900px at 85% 15%, rgba(91, 134, 182, 0.45) 0%, rgba(63, 101, 147, 0.2) 45%, transparent 75%),
+    radial-gradient(circle 700px at 50% 55%, #ffffff 0%, rgba(255, 255, 255, 0.8) 35%, transparent 70%),
+    radial-gradient(circle 900px at 80% 90%, rgba(27, 53, 84, 0.35) 0%, rgba(0, 15, 34, 0.2) 45%, transparent 75%),
+    linear-gradient(180deg, #e4f2fc 0%, #ffffff 32%, #f0f6fc 68%, #dbeaf7 100%);
+  background-attachment: fixed;
+}
+
+@keyframes toast-slide {
+  from { opacity: 0; transform: translateX(16px) scale(0.96); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+.animate-fade-in {
+  animation: toast-slide 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media print {
+  body:has(#area-kwitansi) #root {
+    display: none !important;
+  }
+  body:has(#area-kwitansi) {
+    background: #ffffff !important;
+  }
+}
+

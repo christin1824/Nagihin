@@ -1,13 +1,15 @@
+import { useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import logoNagihin from '../../assets/logo.png'; 
+import logoNagihin from '../../assets/logo.png';
+import { AdminContext } from '../../context/AdminContext';
 
 export default function SignUp() {
   const navigate = useNavigate();
+  const { showToast } = useContext(AdminContext);
 
   const handleSignUp = (e) => {
     e.preventDefault();
-    // Simulasi pendaftaran berhasil
-    alert('Akun berhasil dibuat! Silakan Log In.');
+    showToast('Akun berhasil dibuat! Silakan masuk menggunakan akun Anda.', 'success');
     navigate('/login');
   };
 

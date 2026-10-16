@@ -1,10 +1,11 @@
-import { useState } from 'react'; // Tambahkan ini
+import { useState, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import logoNagihin from '../../assets/logo.png'; 
+import logoNagihin from '../../assets/logo.png';
+import { AdminContext } from '../../context/AdminContext';
 
 export default function Login() {
   const navigate = useNavigate();
-  // Buat state untuk menangkap ketikan email dari pengguna
+  const { showToast } = useContext(AdminContext);
   const [email, setEmail] = useState('');
 
   const handleLogin = (e) => {
@@ -12,14 +13,15 @@ export default function Login() {
     
     // SIMULASI JALUR LOGIN
     if (email === 'admin@gmail.com') {
-      alert('Login sukses! Mengarahkan ke Dashboard Juragan...');
+      localStorage.setItem('role', 'admin');
+      showToast('Login berhasil! Selamat datang di Dashboard Juragan.', 'success');
       navigate('/admin');
     } else if (email === 'penghuni@gmail.com') {
-      alert('Login sukses! Mengarahkan ke Dashboard Penghuni...');
-      navigate('/penghuni'); // Nanti kita buat rute ini
+      localStorage.setItem('role', 'penghuni');
+      showToast('Login berhasil! Selamat datang di Portal Penghuni.', 'success');
+      navigate('/penghuni');
     } else {
-      // Jika email selain dua di atas
-      alert('Email tidak terdaftar. Coba admin@gmail.com atau penghuni@gmail.com');
+      showToast('Email tidak terdaftar. Gunakan admin@gmail.com atau penghuni@gmail.com', 'error');
     }
   };
 
@@ -86,12 +88,21 @@ export default function Login() {
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-gray-500">
+        <p className="mt-5 text-center text-sm text-gray-500">
           Don't have an account?{' '}
           <Link to="/signup" className="font-semibold text-[#2563eb] hover:underline">
             Sign Up
           </Link>
         </p>
+
+        <div className="mt-6 pt-5 border-t border-slate-100 text-center">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-[#1d3557] transition-colors"
+          >
+            ← Lihat Katalog Kamar Kost (Tanpa Login)
+          </Link>
+        </div>
       </div>
     </div>
   );
