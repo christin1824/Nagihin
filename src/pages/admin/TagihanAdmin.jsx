@@ -1,8 +1,9 @@
 import { useState, useContext } from 'react';
-import { AdminContext } from '../../context/AdminContext';
+import { AdminContext } from '../../context/admin-context';
 
 export default function TagihanAdmin() {
-  const { kamarData, setKamarData, bulanSemasa, generateTagihanBulanan } = useContext(AdminContext);
+  // 1. Ambil fungsi bayarTagihan dari AdminContext (setKamarData sudah dihapus karena tidak perlu)
+  const { kamarData, bulanSemasa, generateTagihanBulanan, bayarTagihan } = useContext(AdminContext);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('Semua Status');
@@ -26,25 +27,26 @@ export default function TagihanAdmin() {
     setIsPaymentModalOpen(true);
   };
 
-  const handleSimpanPembayaran = (e) => {
+  // 2. Ubah fungsi ini menjadi async untuk memanggil bayarTagihan
+  const handleSimpanPembayaran = async (e) => {
     e.preventDefault();
-    setKamarData(kamarData.map(k => {
-      if (k.kamar === selectedKamar.kamar) {
-        const historiBaru = {
-          id: Date.now(),
-          bulan: bulanSemasa,
-          ...paymentForm
-        };
-        return { 
-          ...k, 
-          bayar: 'Lunas',
-          riwayatPembayaran: [...(k.riwayatPembayaran || []), historiBaru]
-        };
-      }
-      return k;
-    }));
-    setIsPaymentModalOpen(false);
-    alert(`Pembayaran kamar ${selectedKamar.kamar} berhasil diverifikasi dan dicatat!`);
+    
+    // Siapkan data yang akan dikirim ke koleksi 'tagihan'
+    const historiBaru = {
+      bulan: bulanSemasa,
+      nama_penghuni: selectedKamar.nama, // Menyimpan nama penghuni di nota tagihan
+      ...paymentForm
+    };
+
+    try {
+      // Panggil fungsi bayarTagihan yang ada di AdminContext
+      await bayarTagihan(selectedKamar.kamar, historiBaru);
+      
+      setIsPaymentModalOpen(false);
+      alert(`Pembayaran kamar ${selectedKamar.kamar} berhasil diverifikasi dan dicatat!`);
+    } catch (error) {
+      alert(`Gagal menyimpan pembayaran: ${error.message}`);
+    }
   };
 
   const handleKirimWA = (nama, hp, jumlah, kamar, tempo) => {
@@ -188,7 +190,7 @@ export default function TagihanAdmin() {
         </div>
       </div>
 
-      {/* MODAL VERIFIKASI PEMBAYARAN (KINI DI LUAR KONTEN UTAMA) */}
+      {/* MODAL VERIFIKASI PEMBAYARAN */}
       {isPaymentModalOpen && selectedKamar && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
           <div className="bg-white w-full max-w-md rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-200">

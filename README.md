@@ -1,5 +1,31 @@
 # React + Vite
 
+## Menjalankan dengan Firebase
+
+Project ini menggunakan Firebase Authentication dan Cloud Firestore. Tidak perlu
+membuat server Express terpisah untuk fitur login dan data admin.
+
+1. Di Firebase Console, buka **Project settings > Your apps**, tambahkan aplikasi
+   Web (`</>`), lalu salin konfigurasi Firebase.
+2. Aktifkan **Authentication > Sign-in method > Email/Password**.
+3. Pastikan Cloud Firestore sudah dibuat.
+4. Salin `.env.example` menjadi `.env`, lalu isi semua nilai `VITE_FIREBASE_*`
+   dari konfigurasi aplikasi Web Firebase.
+5. Jalankan project:
+
+```powershell
+npm install
+npm run dev
+```
+
+Pendaftaran dari halaman Sign Up membuat akun Authentication dan dokumen
+`users/{uid}` dengan role `penghuni`. Untuk akun admin pertama, ubah field
+`role` dokumen user tersebut menjadi `admin` di Firestore. Koleksi `kamar` dan
+`tiket_perbaikan` akan dipakai langsung oleh dashboard; bila `kamar` masih
+kosong, data contoh dashboard akan dibuat otomatis sekali.
+
+Jangan memasukkan Firebase service-account JSON atau private key ke frontend.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

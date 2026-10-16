@@ -1,25 +1,29 @@
-import { useState } from 'react'; // Tambahkan ini
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import logoNagihin from '../../assets/logo.png'; 
+import { useAuth } from '../../context/useAuth';
 
 export default function Login() {
   const navigate = useNavigate();
-  // Buat state untuk menangkap ketikan email dari pengguna
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    
-    // SIMULASI JALUR LOGIN
-    if (email === 'admin@gmail.com') {
-      alert('Login sukses! Mengarahkan ke Dashboard Juragan...');
+    setError('');
+    setIsSubmitting(true);
+    try {
+      await login(email, password);
       navigate('/admin');
-    } else if (email === 'penghuni@gmail.com') {
-      alert('Login sukses! Mengarahkan ke Dashboard Penghuni...');
-      navigate('/penghuni'); // Nanti kita buat rute ini
-    } else {
-      // Jika email selain dua di atas
-      alert('Email tidak terdaftar. Coba admin@gmail.com atau penghuni@gmail.com');
+    } catch (loginError) {
+      setError(loginError.code === 'auth/invalid-credential'
+        ? 'Email atau password salah.'
+        : loginError.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -50,9 +54,7 @@ export default function Login() {
               </div>
               <input 
                 type="email" 
-                // Placeholder diubah agar lebih umum
                 placeholder="masukkan email anda..." 
-                // Hubungkan input dengan state
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4d5776] focus:border-transparent text-sm text-gray-800 placeholder-gray-400" 
@@ -72,17 +74,21 @@ export default function Login() {
               <input 
                 type="password" 
                 placeholder="********" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-[#4d5776] focus:border-transparent text-sm text-gray-800 placeholder-gray-400" 
                 required 
               />
             </div>
           </div>
 
+          {error && <p className="text-sm text-red-600">{error}</p>}
+
           <button 
             type="submit" 
             className="w-full bg-[#4d5776] hover:bg-[#3d4560] text-white font-bold py-3.5 rounded-xl transition-colors duration-200 mt-2 text-base"
           >
-            Log In
+            {isSubmitting ? 'Memproses...' : 'Log In'}
           </button>
         </form>
 

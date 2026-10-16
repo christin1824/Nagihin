@@ -1,64 +1,114 @@
 import { useState, useContext } from 'react';
-import { AdminContext } from '../../context/AdminContext';
+import { AdminContext } from '../../context/admin-context';
 
 export default function PenghuniAdmin() {
-  const { kamarData, setKamarData, bulanSemasa } = useContext(AdminContext);
+  // Ambil fungsi tambahPenghuni & checkOutPenghuni
+  const { kamarData, bulanSemasa, addKamar, error: dataError, tambahPenghuni, checkOutPenghuni } = useContext(AdminContext);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [formData, setFormData] = useState({ kamar: '', nama: '', hp: '' });
+  const [roomForm, setRoomForm] = useState({ kamar: '', tipe: 'Reguler', hargaBaku: '1500000' });
+  const [roomError, setRoomError] = useState('');
+  const [isSavingRoom, setIsSavingRoom] = useState(false);
 
-  const handleTambahPenghuni = (e) => {
+  const handleTambahPenghuni = async (e) => {
     e.preventDefault();
-    
-    // Mendapatkan tanggal hari ini dalam format lokal
     const tanggalHariIni = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
     
-    const updatedKamarData = kamarData.map(k => {
-      if (k.kamar === formData.kamar) {
-        return { 
-          ...k, 
-          status: 'Terisi', 
-          bayar: 'Belum Bayar', 
-          nama: formData.nama, 
-          hp: formData.hp, 
-          masuk: tanggalHariIni,
-          jumlah: k.hargaBaku || 1500000, 
-          tempo: `20 ${bulanSemasa}`
-        };
-      }
-      return k;
-    });
+    const dataBaru = {
+      nama: formData.nama,
+      hp: formData.hp,
+      tanggalMasuk: tanggalHariIni,
+      tempo: `20 ${bulanSemasa}`
+    };
 
-    setKamarData(updatedKamarData);
-    setIsModalOpen(false); 
-    setFormData({ kamar: '', nama: '', hp: '' }); 
-    alert(`Penghuni atas nama ${formData.nama} berhasil ditambahkan ke kamar ${formData.kamar}!`);
+    try {
+      // Panggil fungsi context untuk menyimpan ke 2 koleksi
+      await tambahPenghuni(formData.kamar, dataBaru);
+      
+      setIsModalOpen(false); 
+      setFormData({ kamar: '', nama: '', hp: '' }); 
+      alert(`Penghuni atas nama ${formData.nama} berhasil ditambahkan ke kamar ${formData.kamar}!`);
+    } catch (err) {
+      alert(`Gagal menambah penghuni: ${err.message}`);
+    }
   };
 
-  const handleCheckOut = (kamar) => {
+  const handleCheckOut = async (kamar) => {
     if(window.confirm(`Adakah anda pasti mahu mengeluarkan penghuni dari bilik ${kamar}?`)) {
-      setKamarData(kamarData.map(k => 
-        k.kamar === kamar ? { ...k, status: 'Kosong', bayar: 'Kosong', nama: '-', hp: '-', masuk: '-', jumlah: 0, tempo: '-' } : k
-      ));
+      try {
+        await checkOutPenghuni(kamar);
+      } catch (err) {
+        alert(`Gagal check out: ${err.message}`);
+      }
+    }
+  };
+
+  const handleTambahKamar = async (e) => {
+    e.preventDefault();
+    const nomorKamar = roomForm.kamar.trim();
+    if (kamarData.some((room) => room.kamar === nomorKamar)) {
+      setRoomError(`Kamar ${nomorKamar} sudah terdaftar.`);
+      return;
+    }
+
+    const newRoom = {
+      kamar: nomorKamar,
+      tipe: roomForm.tipe,
+      hargaBaku: Number(roomForm.hargaBaku),
+      status: 'Kosong',
+      bayar: 'Kosong',
+      nama: '-',
+      hp: '-',
+      masuk: '-',
+      jumlah: 0,
+      tempo: '-',
+      riwayatPembayaran: [],
+    };
+
+    setRoomError('');
+    setIsSavingRoom(true);
+    try {
+      await addKamar(newRoom);
+      setRoomForm({ kamar: '', tipe: 'Reguler', hargaBaku: '1500000' });
+      setIsRoomModalOpen(false);
+      alert(`Kamar ${nomorKamar} berhasil disimpan ke Firestore.`);
+    } catch (saveError) {
+      setRoomError(`Gagal menyimpan kamar: ${saveError.message}`);
+    } finally {
+      setIsSavingRoom(false);
     }
   };
 
   return (
     <>
-      {/* KONTEN UTAMA */}
       <div className="max-w-5xl mx-auto drop-shadow-sm relative">
+        {(dataError || roomError) && (
+          <div className="mb-4 rounded-xl bg-red-100 px-4 py-3 text-sm font-medium text-red-700">
+            {roomError || dataError}
+          </div>
+        )}
         
         <div className="flex justify-between items-end mb-8 text-white">
           <div>
             <h2 className="text-4xl font-bold mb-1 tracking-wide">Data Penghuni</h2>
             <p className="text-lg text-white/90 font-medium">Manajemen alokasi kamar dan kontak penyewa</p>
           </div>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-[#1d3557] hover:bg-[#152740] text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-2"
-          >
-            <span>➕</span> Tambah Penghuni
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setIsRoomModalOpen(true)}
+              className="bg-white hover:bg-gray-100 text-[#1d3557] font-bold py-3 px-5 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-2"
+            >
+              <span>🛏️</span> Tambah Kamar
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="bg-[#1d3557] hover:bg-[#152740] text-white font-bold py-3 px-5 rounded-xl shadow-lg transition-transform active:scale-95 flex items-center gap-2"
+            >
+              <span>➕</span> Tambah Penghuni
+            </button>
+          </div>
         </div>
 
         <div className="bg-[#f4f7fa] rounded-[20px] shadow-2xl border border-white/50 overflow-hidden">
@@ -107,11 +157,9 @@ export default function PenghuniAdmin() {
 
       </div>
 
-      {/* MODAL POP-UP (KINI DI LUAR KONTEN UTAMA) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
           <div className="bg-white w-full max-w-md rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-200">
-            
             <div className="bg-slate-50 px-8 py-6 border-b border-slate-100 flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-extrabold text-[#1d3557] tracking-tight">Registrasi Penghuni</h3>
@@ -124,9 +172,7 @@ export default function PenghuniAdmin() {
                 <span className="text-lg font-bold">&times;</span>
               </button>
             </div>
-            
             <form onSubmit={handleTambahPenghuni} className="p-8 space-y-5">
-              
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Nomor Kamar</label>
                 <select 
@@ -141,7 +187,6 @@ export default function PenghuniAdmin() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Nama Lengkap</label>
                 <input 
@@ -150,7 +195,6 @@ export default function PenghuniAdmin() {
                   className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#5b738c] focus:ring-4 focus:ring-[#5b738c]/10 rounded-xl px-4 py-3 text-sm font-medium text-gray-700 transition-all outline-none placeholder-gray-400"
                 />
               </div>
-
               <div>
                 <label className="block text-sm font-bold text-gray-700 mb-2">Nomor WhatsApp</label>
                 <input 
@@ -164,7 +208,6 @@ export default function PenghuniAdmin() {
                   className="w-full bg-slate-50 border border-slate-200 focus:bg-white focus:border-[#5b738c] focus:ring-4 focus:ring-[#5b738c]/10 rounded-xl px-4 py-3 text-sm font-medium text-gray-700 transition-all outline-none placeholder-gray-400"
                 />
               </div>
-
               <button 
                 type="submit" 
                 className="w-full bg-gradient-to-r from-[#1d3557] to-[#3b5a82] hover:from-[#152740] hover:to-[#1d3557] text-white font-bold py-3.5 rounded-xl mt-6 shadow-lg shadow-[#1d3557]/30 transition-all active:scale-[0.98]"
@@ -172,7 +215,67 @@ export default function PenghuniAdmin() {
                 Simpan Data Penghuni
               </button>
             </form>
+          </div>
+        </div>
+      )}
 
+      {isRoomModalOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+          <div className="bg-white w-full max-w-md rounded-[28px] shadow-2xl overflow-hidden">
+            <div className="bg-slate-50 px-8 py-6 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-extrabold text-[#1d3557]">Tambah Kamar</h3>
+                <p className="text-sm text-gray-500 mt-1">Data akan tersimpan ke Firestore</p>
+              </div>
+              <button
+                onClick={() => setIsRoomModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-200 text-slate-500 font-bold"
+              >
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleTambahKamar} className="p-8 space-y-5">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Nomor Kamar</label>
+                <input
+                  type="text"
+                  required
+                  value={roomForm.kamar}
+                  onChange={(e) => setRoomForm({ ...roomForm, kamar: e.target.value })}
+                  placeholder="Contoh: 107"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:bg-white focus:ring-4 focus:ring-[#5b738c]/10"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Tipe Kamar</label>
+                <select
+                  value={roomForm.tipe}
+                  onChange={(e) => setRoomForm({ ...roomForm, tipe: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none"
+                >
+                  <option value="Reguler">Reguler</option>
+                  <option value="VIP">VIP</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">Harga Bulanan</label>
+                <input
+                  type="number"
+                  min="0"
+                  required
+                  value={roomForm.hargaBaku}
+                  onChange={(e) => setRoomForm({ ...roomForm, hargaBaku: e.target.value })}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:bg-white focus:ring-4 focus:ring-[#5b738c]/10"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isSavingRoom}
+                className="w-full bg-gradient-to-r from-[#1d3557] to-[#3b5a82] text-white font-bold py-3.5 rounded-xl shadow-lg"
+              >
+                {isSavingRoom ? 'Menyimpan...' : 'Simpan Kamar'}
+              </button>
+            </form>
           </div>
         </div>
       )}

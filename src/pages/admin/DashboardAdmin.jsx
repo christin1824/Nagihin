@@ -1,5 +1,5 @@
 import { useContext } from 'react';
-import { AdminContext } from '../../context/AdminContext';
+import { AdminContext } from '../../context/admin-context';
 
 export default function DashboardAdmin() {
   // Mengambil data kamar dan bulan dinamis dari Database Pusat

@@ -1,5 +1,5 @@
 import { useState, useContext } from 'react';
-import { AdminContext } from '../../context/AdminContext';
+import { AdminContext } from '../../context/admin-context';
 
 export default function TiketAdmin() {
   // 1. Mengambil data dari Context, bukan useState lokal lagi
