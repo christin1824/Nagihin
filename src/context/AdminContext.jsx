@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  query,
-  where,
-  writeBatch,
-  addDoc,
-} from 'firebase/firestore';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import {
+  batchUpdate,
+  createDocument,
+  getCollection,
+  updateDocument,
+} from '../lib/api';
 import { AdminContext } from './admin-context';
 
 export { AdminContext };
@@ -24,19 +20,18 @@ const initialKamarData = [
   { kamar: '106', tipe: 'Reguler', hargaBaku: 1500000, status: 'Kosong', bayar: 'Kosong', nama: '-', hp: '-', masuk: '-', jumlah: 0, tempo: '-', riwayatPembayaran: [] },
 ];
 
-function normalizeRoom(snapshot) {
-  const data = snapshot.data();
+function normalizeRoom(data) {
   const rawStatus = data.status ?? data.status_kamar;
   const normalizedStatus = String(rawStatus ?? '').toLowerCase();
   return {
     ...data,
-    _docId: snapshot.id,
+    _docId: data.id,
     kamar: String(
       data.kamar
       ?? data.nomor_kamar
       ?? data.room
       ?? data.kamar_id
-      ?? snapshot.id
+      ?? data.id
     ),
     status: normalizedStatus === 'terisi'
       ? 'Terisi'
@@ -60,12 +55,11 @@ function normalizeRoom(snapshot) {
   };
 }
 
-function normalizeMessage(snapshot) {
-  const data = snapshot.data();
+function normalizeMessage(data) {
   return {
     ...data,
-    _docId: snapshot.id,
-    id: data.id ?? snapshot.id,
+    _docId: data.id,
+    id: data.id,
     nama: data.nama ?? 'Pengunjung',
     hp: data.hp ?? '-',
     pesan: data.pesan ?? '',
@@ -77,15 +71,10 @@ function normalizeMessage(snapshot) {
 
 async function saveCollection(collectionName, items, idField = '_docId') {
   if (!db) throw new Error('Firebase belum dikonfigurasi.');
-  const batch = writeBatch(db);
-  items.forEach((item) => {
-    const id = item[idField] || item.id || item.kamar;
-    const data = { ...item };
-    delete data._docId;
-    delete data.id;
-    batch.set(doc(db, collectionName, String(id)), data, { merge: true });
-  });
-  await batch.commit();
+  await batchUpdate(collectionName, items.map((item) => ({
+    ...item,
+    id: item[idField] || item.id || item.kamar,
+  })));
 }
 
 export function AdminProvider({ children }) {
@@ -136,114 +125,58 @@ export function AdminProvider({ children }) {
   useEffect(() => {
     if (!db) return undefined;
 
-    const unsubscribeTagihan = onSnapshot(collection(db, 'tagihan'), (snapshot) => {
-      setTagihanState(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })));
-    }, (err) => setError(err.message));
+    let cancelled = false;
+    const loadData = async (currentUser) => {
+      if (!currentUser || cancelled) return;
+      try {
+        const profileResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001/api'}/me`, {
+          headers: { Authorization: `Bearer ${await currentUser.getIdToken()}` },
+        });
+        if (!profileResponse.ok) return;
+        const { profile } = await profileResponse.json();
+        if (!profile) return;
 
-    // Listener koleksi penghuni
-    const unsubscribePenghuni = onSnapshot(collection(db, 'penghuni'), (snapshot) => {
-      setPenghuniState(snapshot.docs.map((doc) => ({ ...doc.data(), id: doc.id })));
-    }, (err) => setError(err.message));
+        const [rooms, tickets, bills, tenants] = await Promise.all([
+          getCollection('kamar'),
+          getCollection('tiket_perbaikan'),
+          profile.role === 'admin' ? getCollection('tagihan') : Promise.resolve([]),
+          profile.role === 'admin' ? getCollection('penghuni') : Promise.resolve([]),
+        ]);
+        if (cancelled) return;
+        setKamarState(rooms.map(normalizeRoom));
+        setTiketState(tickets);
+        setTagihanState(bills);
+        setPenghuniState(tenants);
 
-    let unsubscribeMessages = () => {};
-    let unsubscribeRooms = () => {};
-    let unsubscribeTickets = () => {};
-    let unsubscribeTenantAccounts = () => {};
-    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
-      unsubscribeMessages();
-      unsubscribeMessages = () => {};
-      unsubscribeRooms();
-      unsubscribeRooms = () => {};
-      unsubscribeTickets();
-      unsubscribeTickets = () => {};
-      unsubscribeTenantAccounts();
-      unsubscribeTenantAccounts = () => {};
-      setMessageListenerReady(false);
-
-      if (!currentUser) return;
-
-      const profileSnapshot = await getDoc(doc(db, 'users', currentUser.uid));
-      const profile = profileSnapshot.data();
-      if (!profile) return;
-
-      unsubscribeTickets = onSnapshot(collection(db, 'tiket_perbaikan'), (snapshot) => {
-        setTiketState(snapshot.docs.map((item) => ({ ...item.data(), id: item.id })));
-      }, (err) => setError(err.message));
-
-      const kamarPenghuni = String(
-        profile.kamar ?? profile.room ?? profile.kamar_id ?? profile.nomor_kamar ?? ''
-      ).trim().replace(/^kamar\s+/i, '');
-      if (profile.role === 'admin') {
-        unsubscribeTenantAccounts = onSnapshot(
-          query(collection(db, 'users'), where('role', '==', 'penghuni')),
-          (snapshot) => {
-            setAkunPenghuniState(snapshot.docs.map((item) => ({ ...item.data(), id: item.id })));
-          },
-          (err) => setError(err.message),
-        );
-        unsubscribeRooms = onSnapshot(collection(db, 'kamar'), async (snapshot) => {
-          if (snapshot.empty && !seededRooms.current) {
+        if (profile.role === 'admin') {
+          const [accounts, messages] = await Promise.all([
+            getCollection('users', { field: 'role', value: 'penghuni' }),
+            getCollection('pesan'),
+          ]);
+          if (accounts.length === 0 && !seededRooms.current) {
             seededRooms.current = true;
             await saveCollection('kamar', initialKamarData);
-            return;
+            setKamarState(initialKamarData.map((item) => ({ ...item, _docId: item.kamar })));
           }
-          setKamarState(snapshot.docs.map(normalizeRoom));
-          setLoading(false);
-        }, (err) => setError(err.message));
-      } else {
-        const roomResults = new Map();
-        const updateTenantRooms = () => {
-          setKamarState([...roomResults.values()].map(normalizeRoom));
-          setLoading(false);
-        };
-        const roomDocument = doc(db, 'kamar', kamarPenghuni);
-        const unsubscribeDirectRoom = onSnapshot(roomDocument, (snapshot) => {
-          if (snapshot.exists()) {
-            roomResults.set(snapshot.id, snapshot);
-          } else {
-            roomResults.delete(snapshot.id);
+          if (!cancelled) {
+            setAkunPenghuniState(accounts);
+            setPesanData(messages.map(normalizeMessage));
+            setMessageListenerReady(true);
           }
-          updateTenantRooms();
-        }, (err) => setError(err.message));
-        const unsubscribeRoomQuery = onSnapshot(
-          query(collection(db, 'kamar'), where('kamar', '==', kamarPenghuni)),
-          (snapshot) => {
-            snapshot.docs.forEach((roomSnapshot) => roomResults.set(roomSnapshot.id, roomSnapshot));
-            updateTenantRooms();
-          },
-          (err) => setError(err.message),
-        );
-        const unsubscribeRoomNumberQuery = onSnapshot(
-          query(collection(db, 'kamar'), where('kamar', '==', Number(kamarPenghuni))),
-          (snapshot) => {
-            snapshot.docs.forEach((roomSnapshot) => roomResults.set(roomSnapshot.id, roomSnapshot));
-            updateTenantRooms();
-          },
-          (err) => setError(err.message),
-        );
-        unsubscribeRooms = () => {
-          unsubscribeDirectRoom();
-          unsubscribeRoomQuery();
-          unsubscribeRoomNumberQuery();
-        };
+        }
+        setLoading(false);
+      } catch (loadError) {
+        if (!cancelled) setError(loadError.message);
       }
+    };
 
-      if (profile.role !== 'admin') return;
-
-      unsubscribeMessages = onSnapshot(collection(db, 'pesan'), (snapshot) => {
-        setPesanData(snapshot.docs.map(normalizeMessage));
-        setMessageListenerReady(true);
-      }, (err) => setError(err.message));
-    });
-
+    const unsubscribeAuth = onAuthStateChanged(auth, loadData);
+    const intervalId = window.setInterval(() => {
+      if (auth.currentUser) loadData(auth.currentUser);
+    }, 10000);
     return () => {
-      unsubscribeRooms();
-      unsubscribeTickets();
-      unsubscribeTenantAccounts();
-      unsubscribeTagihan();
-      unsubscribePenghuni();
-      unsubscribeRooms();
-      unsubscribeMessages();
+      cancelled = true;
+      window.clearInterval(intervalId);
       unsubscribeAuth();
     };
   }, []);
@@ -272,8 +205,8 @@ export function AdminProvider({ children }) {
 
   const buatLaporanKomplain = async (laporan) => {
     if (!db) throw new Error('Firebase belum dikonfigurasi.');
-    const laporanRef = await addDoc(collection(db, 'tiket_perbaikan'), laporan);
-    return laporanRef.id;
+    const laporanResponse = await createDocument('tiket_perbaikan', laporan);
+    return laporanResponse.id;
   };
 
   const generateTagihanBulanan = () => {
@@ -286,7 +219,7 @@ export function AdminProvider({ children }) {
 
   const bayarTagihan = async (nomorKamar, dataPembayaran) => {
     try {
-      await addDoc(collection(db, 'tagihan'), {
+      await createDocument('tagihan', {
         kamar_id: nomorKamar,
         ...dataPembayaran,
         waktu_dibuat: new Date().toISOString()
@@ -301,7 +234,7 @@ export function AdminProvider({ children }) {
   // Fungsi Tambah Penghuni (Tersimpan di koleksi 'penghuni' dan 'kamar')
   const tambahPenghuni = async (nomorKamar, dataPenghuni) => {
     try {
-      await addDoc(collection(db, 'penghuni'), {
+      await createDocument('penghuni', {
         kamar_id: nomorKamar,
         ...dataPenghuni,
         status_sewa: 'Aktif',
@@ -353,24 +286,12 @@ export function AdminProvider({ children }) {
 
     if (!db || !messageListenerReady) return;
 
-    const previousIds = new Set(pesanData.map((message) => message._docId).filter(Boolean));
-    const nextIds = new Set(nextData.map((message) => message._docId).filter(Boolean));
-    const batch = writeBatch(db);
-
     nextData.forEach((message) => {
       const documentId = message._docId || String(message.id);
       const data = { ...message };
       delete data._docId;
-      batch.set(doc(db, 'pesan', documentId), data, { merge: true });
+      updateDocument('pesan', documentId, data).catch((err) => setError(err.message));
     });
-
-    previousIds.forEach((documentId) => {
-      if (!nextIds.has(documentId)) {
-        batch.delete(doc(db, 'pesan', documentId));
-      }
-    });
-
-    batch.commit().catch((err) => setError(err.message));
   };
 
   const kirimPesanPublik = async ({ nama, hp, pesan }) => {
@@ -378,7 +299,7 @@ export function AdminProvider({ children }) {
     if (!auth) throw new Error('Firebase Authentication belum dikonfigurasi.');
     const currentUser = auth.currentUser || (await signInAnonymously(auth)).user;
 
-    await addDoc(collection(db, 'pesan'), {
+    await createDocument('pesan', {
       clientUid: currentUser.uid,
       nama,
       hp,

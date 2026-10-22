@@ -9,22 +9,14 @@ import {
   updatePassword,
   updateProfile,
 } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../lib/firebase';
+import { createDocument, getCurrentProfile, updateDocument } from '../lib/api';
 import { AuthContext } from './auth-context';
 
 async function loadProfile(currentUser) {
-  const directSnapshot = await getDoc(doc(db, 'users', currentUser.uid));
-  if (directSnapshot.exists()) return directSnapshot.data();
-
-  const profileQuery = query(
-    collection(db, 'users'),
-    where('uid', '==', currentUser.uid),
-  );
-  const profileResults = await getDocs(profileQuery);
-  if (!profileResults.empty) return profileResults.docs[0].data();
-
-  return null;
+  if (!currentUser) return null;
+  const response = await getCurrentProfile();
+  return response.profile;
 }
 
 export function AuthProvider({ children }) {
@@ -72,7 +64,7 @@ export function AuthProvider({ children }) {
       role: 'penghuni',
       createdAt: new Date().toISOString(),
     };
-    await setDoc(doc(db, 'users', credential.user.uid), newProfile);
+    await createDocument('users', newProfile);
     setProfile(newProfile);
   };
 
@@ -96,7 +88,7 @@ export function AuthProvider({ children }) {
     if (!auth?.currentUser || !db) {
       throw new Error('Sesi pengguna tidak tersedia.');
     }
-    await updateDoc(doc(db, 'users', auth.currentUser.uid), { hp: phone });
+    await updateDocument('users', auth.currentUser.uid, { hp: phone });
     setProfile((previousProfile) => ({ ...previousProfile, hp: phone }));
   };
 

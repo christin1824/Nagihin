@@ -1,5 +1,4 @@
 import { useState, useContext, useEffect, useRef } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { Link } from 'react-router-dom';
 import { AdminContext } from '../../context/AdminContext';
@@ -25,6 +24,7 @@ import {
 } from '../../components/Icons';
 import Modal, { Field, inputClass } from '../../components/Modal';
 import { auth, db } from '../../lib/firebase';
+import { getCollection } from '../../lib/api';
 
 const NOMOR_WHATSAPP_PENGELOLA = '6281943376024';
 
@@ -73,7 +73,7 @@ export default function KatalogPublik() {
   useEffect(() => {
     if (!auth || !db) return undefined;
 
-    let unsubscribeMessages = () => {};
+    let intervalId;
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         try {
@@ -84,17 +84,11 @@ export default function KatalogPublik() {
         return;
       }
 
-      unsubscribeMessages();
-      const messagesQuery = query(
-        collection(db, 'pesan'),
-        where('clientUid', '==', currentUser.uid),
-      );
-      unsubscribeMessages = onSnapshot(messagesQuery, (snapshot) => {
-        const messages = snapshot.docs
-          .map((messageSnapshot) => ({
-            ...messageSnapshot.data(),
-            _docId: messageSnapshot.id,
-          }))
+      const loadMessages = async () => {
+        const messages = (await getCollection('pesan', {
+          field: 'clientUid',
+          value: currentUser.uid,
+        }))
           .filter((message) => {
             if (!chatHiddenBeforeRef.current) return true;
             const createdAt = Date.parse(message.createdAt || '');
@@ -102,11 +96,13 @@ export default function KatalogPublik() {
           })
           .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
         setChatHistory(messages);
-      });
+      };
+      await loadMessages();
+      intervalId = window.setInterval(loadMessages, 10000);
     });
 
     return () => {
-      unsubscribeMessages();
+      if (intervalId) window.clearInterval(intervalId);
       unsubscribeAuth();
     };
   }, []);
