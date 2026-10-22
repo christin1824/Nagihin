@@ -7,10 +7,10 @@ export default function SplashScreen() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Berpindah otomatis ke halaman /login setelah 3 detik
+    // Berpindah otomatis ke halaman katalog publik setelah 2.5 detik
     const timer = setTimeout(() => {
-      navigate('/login');
-    }, 3000);
+      navigate('/');
+    }, 2500);
     return () => clearTimeout(timer);
   }, [navigate]);
 

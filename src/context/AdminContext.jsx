@@ -3,6 +3,8 @@ import { collection, doc, onSnapshot, writeBatch, addDoc } from 'firebase/firest
 import { db } from '../lib/firebase';
 import { AdminContext } from './admin-context';
 
+export { AdminContext };
+
 const initialKamarData = [
   { kamar: '101', tipe: 'Reguler', hargaBaku: 1500000, status: 'Terisi', bayar: 'Belum Bayar', nama: 'Devanka Raditanti', hp: '08123456789', masuk: '2026-01-01', jumlah: 1500000, tempo: '2026-10-20', riwayatPembayaran: [] },
   { kamar: '102', tipe: 'Reguler', hargaBaku: 1500000, status: 'Terisi', bayar: 'Lunas', nama: 'Budi Santoso', hp: '08111111111', masuk: '2026-01-10', jumlah: 1500000, tempo: '2026-10-20', riwayatPembayaran: [] },
