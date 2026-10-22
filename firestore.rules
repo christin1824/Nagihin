@@ -8,7 +8,8 @@ service cloud.firestore {
 
     function isAdmin() {
       return signedIn()
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin';
     }
 
     match /users/{userId} {
@@ -23,16 +24,67 @@ service cloud.firestore {
     }
 
     match /kamar/{roomId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin()
+        || (
+          signedIn()
+          && string(resource.data.get(
+            'kamar',
+            resource.data.get(
+              'nomor_kamar',
+              resource.data.get('room', resource.data.get('kamar_id', resource.id))
+            )
+          ))
+          == string(get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get(
+              'kamar',
+              get(/databases/$(database)/documents/users/$(request.auth.uid))
+                .data.get(
+                  'room',
+                  get(/databases/$(database)/documents/users/$(request.auth.uid))
+                    .data.get(
+                      'kamar_id',
+                      get(/databases/$(database)/documents/users/$(request.auth.uid))
+                        .data.get('nomor_kamar', '')
+                    )
+                )
+            ))
+        );
+      allow write: if isAdmin();
+      allow update: if signedIn()
+        && (
+          roomId == get(/databases/$(database)/documents/users/$(request.auth.uid))
+            .data.get('kamar', get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.get('room', get(/databases/$(database)/documents/users/$(request.auth.uid))
+                .data.get('kamar_id', get(/databases/$(database)/documents/users/$(request.auth.uid))
+                  .data.get('nomor_kamar', ''))))
+          || resource.data.get('kamar', resource.data.get('nomor_kamar', ''))
+            == get(/databases/$(database)/documents/users/$(request.auth.uid))
+              .data.get('kamar', get(/databases/$(database)/documents/users/$(request.auth.uid))
+                .data.get('room', get(/databases/$(database)/documents/users/$(request.auth.uid))
+                  .data.get('kamar_id', get(/databases/$(database)/documents/users/$(request.auth.uid))
+                    .data.get('nomor_kamar', ''))))
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['hp']);
     }
 
     match /tagihan/{billId} {
       allow read, write: if isAdmin();
     }
 
+    match /penghuni/{tenantId} {
+      allow read, write: if isAdmin();
+    }
+
     match /tiket_perbaikan/{ticketId} {
       allow read: if signedIn();
       allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    match /pesan/{pesanId} {
+      allow create: if true;
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.clientUid == request.auth.uid);
       allow update, delete: if isAdmin();
     }
   }

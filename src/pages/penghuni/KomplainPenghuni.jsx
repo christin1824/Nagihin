@@ -1,6 +1,6 @@
 import { useContext, useState } from 'react';
 import { AdminContext } from '../../context/AdminContext';
-import { KAMAR_PENGHUNI } from '../../context/session';
+import { useAuth } from '../../context/useAuth';
 import { Field, inputClass, primaryBtn } from '../../components/Modal';
 import { IconPlus, IconCheck } from '../../components/Icons';
 
@@ -15,22 +15,41 @@ const badge = (status) =>
       : 'bg-[#fc9292] text-[#a12020] border-[#a12020]/30';
 
 export default function KomplainPenghuni() {
-  const { tiketData, setTiketData, showToast } = useContext(AdminContext);
+  const { tiketData, buatLaporanKomplain, showToast } = useContext(AdminContext);
+  const { profile } = useAuth();
   const [form, setForm] = useState({ kategori: 'AC', deskripsi: '' });
   const [filter, setFilter] = useState('Semua');
+  const kamarPenghuni = String(
+    profile?.kamar ?? profile?.room ?? profile?.kamar_id ?? profile?.nomor_kamar ?? ''
+  ).trim().replace(/^kamar\s+/i, '');
 
   const riwayat = tiketData
-    .filter((t) => t.kamar === KAMAR_PENGHUNI)
+    .filter((t) => String(t.kamar ?? t.kamar_id ?? '').trim() === kamarPenghuni)
     .filter((t) => filter === 'Semua' || t.status === filter)
-    .sort((a, b) => b.id - a.id);
+    .sort((a, b) => String(b.waktu_dibuat ?? b.id).localeCompare(String(a.waktu_dibuat ?? a.id)));
 
-  const handleKirim = (e) => {
+  const handleKirim = async (e) => {
     e.preventDefault();
     if (!form.deskripsi.trim()) return;
     const tanggal = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-    setTiketData([...tiketData, { id: Date.now(), kamar: KAMAR_PENGHUNI, ...form, tanggal, status: 'Menunggu' }]);
-    setForm({ kategori: 'AC', deskripsi: '' });
-    showToast('Laporan komplain berhasil dikirim. Pengelola akan segera menindaklanjuti.', 'success');
+    const laporan = {
+      id: Date.now(),
+      kamar: kamarPenghuni,
+      penghuniUid: profile?.uid,
+      penghuniNama: profile?.nama,
+      ...form,
+      tanggal,
+      status: 'Menunggu',
+      waktu_dibuat: new Date().toISOString(),
+    };
+
+    try {
+      await buatLaporanKomplain(laporan);
+      setForm({ kategori: 'AC', deskripsi: '' });
+      showToast('Laporan komplain berhasil dikirim. Pengelola akan segera menindaklanjuti.', 'success');
+    } catch (sendError) {
+      showToast(`Laporan gagal disimpan: ${sendError.message}`, 'error');
+    }
   };
 
   return (
@@ -131,4 +150,3 @@ export default function KomplainPenghuni() {
     </div>
   );
 }
-

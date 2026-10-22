@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   updateProfile,
 } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, updateDoc, where } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../lib/firebase';
 import { AuthContext } from './auth-context';
 
@@ -73,11 +76,15 @@ export function AuthProvider({ children }) {
     setProfile(newProfile);
   };
 
-  const login = (email, password) => {
+  const login = async (email, password) => {
     if (!isFirebaseConfigured || !auth) {
-      return Promise.reject(new Error('Firebase belum dikonfigurasi. Isi file .env terlebih dahulu.'));
+      throw new Error('Firebase belum dikonfigurasi. Isi file .env terlebih dahulu.');
     }
-    return signInWithEmailAndPassword(auth, email, password);
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    const currentProfile = await loadProfile(credential.user);
+    setUser(credential.user);
+    setProfile(currentProfile);
+    return { user: credential.user, profile: currentProfile };
   };
 
   const logout = () => {
@@ -85,8 +92,41 @@ export function AuthProvider({ children }) {
     return Promise.resolve();
   };
 
+  const updatePhone = async (phone) => {
+    if (!auth?.currentUser || !db) {
+      throw new Error('Sesi pengguna tidak tersedia.');
+    }
+    await updateDoc(doc(db, 'users', auth.currentUser.uid), { hp: phone });
+    setProfile((previousProfile) => ({ ...previousProfile, hp: phone }));
+  };
+
+  const changePassword = async (currentPassword, newPassword) => {
+    if (!auth?.currentUser) {
+      throw new Error('Sesi pengguna tidak tersedia.');
+    }
+    if (currentPassword === newPassword) {
+      throw new Error('Password baru harus berbeda dari password lama.');
+    }
+    const credential = EmailAuthProvider.credential(
+      auth.currentUser.email,
+      currentPassword,
+    );
+    await reauthenticateWithCredential(auth.currentUser, credential);
+    await updatePassword(auth.currentUser, newPassword);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, authError, login, register, logout }}>
+    <AuthContext.Provider value={{
+      user,
+      profile,
+      loading,
+      authError,
+      login,
+      register,
+      logout,
+      updatePhone,
+      changePassword,
+    }}>
       {children}
     </AuthContext.Provider>
   );

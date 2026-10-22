@@ -11,13 +11,25 @@ export default function KamarAdmin() {
   const [tipeFilter, setTipeFilter] = useState('Semua Tipe');
   const [modal, setModal] = useState(null); // null | 'tambah' | 'edit'
   const [form, setForm] = useState(emptyForm);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const filteredKamar = kamarData.filter((k) => {
-    const matchSearch =
-      k.kamar.includes(search) || k.tipe.toLowerCase().includes(search.toLowerCase());
-    const matchTipe = tipeFilter === 'Semua Tipe' || k.tipe === tipeFilter;
-    return matchSearch && matchTipe;
-  });
+  const filteredKamar = kamarData
+    .filter((k) => {
+      const matchSearch =
+        k.kamar.includes(search) || k.tipe.toLowerCase().includes(search.toLowerCase());
+      const matchTipe = tipeFilter === 'Semua Tipe' || k.tipe === tipeFilter;
+      return matchSearch && matchTipe;
+    })
+    .sort((a, b) => {
+      const numberA = Number(a.kamar);
+      const numberB = Number(b.kamar);
+
+      if (Number.isNaN(numberA) || Number.isNaN(numberB)) {
+        return a.kamar.localeCompare(b.kamar, 'id', { numeric: true });
+      }
+
+      return numberA - numberB;
+    });
 
   const bukaTambah = () => {
     setForm(emptyForm);
@@ -41,8 +53,10 @@ export default function KamarAdmin() {
       .map((f) => f.trim())
       .filter(Boolean);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
+
     const harga = Number(form.hargaBaku);
     const fasilitas = parseFasilitas(form.fasilitas);
 
@@ -52,46 +66,61 @@ export default function KamarAdmin() {
         showToast(`Kamar ${nomor} sudah terdaftar di sistem!`, 'error');
         return;
       }
-      setKamarData([
-        ...kamarData,
-        {
-          kamar: nomor,
-          tipe: form.tipe,
-          hargaBaku: harga,
-          lantai: form.lantai,
-          fasilitas,
-          status: 'Kosong',
-          bayar: 'Kosong',
-          nama: '-',
-          hp: '-',
-          masuk: '-',
-          jumlah: 0,
-          tempo: '-',
-          riwayatPembayaran: [],
-        },
-      ]);
-      showToast(`Kamar ${nomor} berhasil ditambahkan!`, 'success');
+      setIsSaving(true);
+      try {
+        await setKamarData([
+          ...kamarData,
+          {
+            kamar: nomor,
+            tipe: form.tipe,
+            hargaBaku: harga,
+            lantai: form.lantai,
+            fasilitas,
+            status: 'Kosong',
+            bayar: 'Kosong',
+            nama: '-',
+            hp: '-',
+            masuk: '-',
+            jumlah: 0,
+            tempo: '-',
+            riwayatPembayaran: [],
+          },
+        ]);
+        setModal(null);
+        showToast(`Kamar ${nomor} berhasil ditambahkan!`, 'success');
+      } catch (saveError) {
+        showToast(`Kamar gagal disimpan: ${saveError.message}`, 'error');
+      } finally {
+        setIsSaving(false);
+      }
     } else {
-      setKamarData(
-        kamarData.map((k) =>
-          k.kamar === form.kamar
-            ? {
-                ...k,
-                tipe: form.tipe,
-                hargaBaku: harga,
-                lantai: form.lantai,
-                fasilitas,
-                jumlah:
-                  k.status === 'Terisi' && (k.bayar === 'Belum Bayar' || k.bayar === 'Jatuh Tempo')
-                    ? harga
-                    : k.jumlah,
-              }
-            : k
-        )
-      );
-      showToast(`Perubahan data Kamar ${form.kamar} berhasil disimpan!`, 'success');
+      setIsSaving(true);
+      try {
+        await setKamarData(
+          kamarData.map((k) =>
+            k.kamar === form.kamar
+              ? {
+                  ...k,
+                  tipe: form.tipe,
+                  hargaBaku: harga,
+                  lantai: form.lantai,
+                  fasilitas,
+                  jumlah:
+                    k.status === 'Terisi' && (k.bayar === 'Belum Bayar' || k.bayar === 'Jatuh Tempo')
+                      ? harga
+                      : k.jumlah,
+                }
+              : k
+          )
+        );
+        setModal(null);
+        showToast(`Perubahan data Kamar ${form.kamar} berhasil disimpan!`, 'success');
+      } catch (saveError) {
+        showToast(`Perubahan gagal disimpan: ${saveError.message}`, 'error');
+      } finally {
+        setIsSaving(false);
+      }
     }
-    setModal(null);
   };
 
   const handleHapus = (row) => {
@@ -240,7 +269,7 @@ export default function KamarAdmin() {
           subtitle="Atur tipe kamar, lantai, harga sewa, dan fasilitas"
           onClose={() => setModal(null)}
           onSubmit={handleSubmit}
-          submitLabel={modal === 'tambah' ? 'Simpan Kamar' : 'Simpan Perubahan'}
+          submitLabel={isSaving ? 'Menyimpan...' : modal === 'tambah' ? 'Simpan Kamar' : 'Simpan Perubahan'}
         >
           <Field label="Nomor Kamar">
             <input

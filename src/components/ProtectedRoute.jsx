@@ -34,9 +34,11 @@ export default function ProtectedRoute({ children, roleRequired }) {
     return (
       <div className="min-h-screen grid place-items-center p-6 text-center">
         <div>
-          <p className="font-semibold text-red-600">Akun ini belum memiliki akses admin.</p>
+          <p className="font-semibold text-red-600">
+            Akun ini tidak memiliki akses ke halaman {roleRequired}.
+          </p>
           <p className="mt-2 text-gray-600">
-            Ubah field role pada users/{user.uid} menjadi &quot;admin&quot;.
+            Role akun saat ini adalah &quot;{profile.role || 'belum diatur'}&quot;.
           </p>
         </div>
       </div>

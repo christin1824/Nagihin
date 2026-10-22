@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useContext } from 'react';
+import { AdminContext } from '../context/AdminContext';
 import {
   IconGrid,
   IconDollar,
@@ -32,7 +34,9 @@ const Tooltip = ({ text, show }) =>
 export default function AdminLayout() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { pesanData } = useContext(AdminContext);
   const [collapsed, setCollapsed] = useState(false);
+  const pesanBaru = pesanData.filter((pesan) => pesan.status === 'Baru').length;
 
   const handleLogout = () => {
     localStorage.removeItem('role');
@@ -91,7 +95,17 @@ export default function AdminLayout() {
               }`}
             >
               <span className="shrink-0">{m.icon}</span>
-              {!collapsed && <span>{m.label}</span>}
+              {!collapsed && <span className="flex-1">{m.label}</span>}
+              {m.to === '/admin/pesan' && pesanBaru > 0 && (
+                <span
+                  className={`flex min-w-5 h-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-extrabold text-white shadow-sm ${
+                    collapsed ? 'absolute right-1 top-1' : ''
+                  }`}
+                  aria-label={`${pesanBaru} pesan baru`}
+                >
+                  {pesanBaru > 99 ? '99+' : pesanBaru}
+                </span>
+              )}
               <Tooltip text={m.label} show={collapsed} />
             </Link>
           ))}

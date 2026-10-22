@@ -1,43 +1,105 @@
-import { useContext, useState } from 'react';
+import { useContext, useMemo, useState } from 'react';
 import { AdminContext } from '../../context/AdminContext';
 import { IconSearch, IconTrash, IconWhatsApp, IconSend } from '../../components/Icons';
 
 export default function PesanAdmin() {
   const { pesanData, setPesanData } = useContext(AdminContext);
-  const [activeId, setActiveId] = useState(pesanData[0]?.id ?? null);
+  const [activeId, setActiveId] = useState(null);
   const [reply, setReply] = useState('');
   const [search, setSearch] = useState('');
 
-  const activeChat = pesanData.find((c) => c.id === activeId) || null;
-  const filtered = pesanData.filter(
-    (c) =>
-      c.nama.toLowerCase().includes(search.toLowerCase()) ||
-      c.pesan.toLowerCase().includes(search.toLowerCase())
-  );
+  const getConversationKey = (chat) => {
+    const nama = String(chat.nama ?? '').trim().toLowerCase();
+    const hp = String(chat.hp ?? '').replace(/\D/g, '');
+    if (nama || hp) return `${nama}-${hp}`;
+    return chat.clientUid || String(chat.id);
+  };
+
+  const conversations = useMemo(() => {
+    const grouped = new Map();
+
+    pesanData.forEach((message) => {
+      const key = getConversationKey(message);
+      const conversation = grouped.get(key) || {
+        id: key,
+        nama: message.nama,
+        hp: message.hp,
+        messages: [],
+      };
+      conversation.messages.push(message);
+      grouped.set(key, conversation);
+    });
+
+    return [...grouped.values()]
+      .map((conversation) => {
+        const messages = [...conversation.messages].sort((a, b) =>
+          String(a.createdAt ?? a.waktu ?? '').localeCompare(String(b.createdAt ?? b.waktu ?? ''))
+        );
+        const latestMessage = messages[messages.length - 1];
+        return {
+          ...conversation,
+          messages,
+          nama: latestMessage.nama,
+          hp: latestMessage.hp,
+          pesan: latestMessage.pesan,
+          waktu: latestMessage.waktu,
+          status: messages.some((message) => message.status === 'Baru') ? 'Baru' : 'Dibaca',
+        };
+      })
+      .sort((a, b) =>
+        String(b.messages[b.messages.length - 1]?.createdAt ?? '').localeCompare(
+          String(a.messages[a.messages.length - 1]?.createdAt ?? '')
+        )
+      );
+  }, [pesanData]);
+
+  const selectedId = conversations.some((conversation) => conversation.id === activeId)
+    ? activeId
+    : conversations[0]?.id ?? null;
+  const activeChat = conversations.find((conversation) => conversation.id === selectedId) || null;
+  const filtered = conversations.filter((conversation) => {
+    const query = search.toLowerCase();
+    return (
+      conversation.nama.toLowerCase().includes(query) ||
+      conversation.hp.toLowerCase().includes(query) ||
+      conversation.messages.some((message) => message.pesan.toLowerCase().includes(query))
+    );
+  });
 
   const jam = () =>
     new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
+  const getWhatsAppNumber = (phone) => {
+    const digits = String(phone ?? '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.startsWith('0')) return `62${digits.slice(1)}`;
+    if (digits.startsWith('62')) return digits;
+    return `62${digits}`;
+  };
+
   const bukaChat = (chat) => {
     setActiveId(chat.id);
     if (chat.status === 'Baru') {
-      setPesanData(pesanData.map((c) => (c.id === chat.id ? { ...c, status: 'Dibaca' } : c)));
+      setPesanData((messages) =>
+        messages.map((message) =>
+          getConversationKey(message) === chat.id ? { ...message, status: 'Dibaca' } : message
+        )
+      );
     }
   };
 
   const handleBalas = (e) => {
     e.preventDefault();
     if (!reply.trim() || !activeChat) return;
-    const waNumber = activeChat.hp.startsWith('0') ? '62' + activeChat.hp.slice(1) : activeChat.hp;
-    window.open(`https://wa.me/${waNumber}?text=${encodeURIComponent(reply)}`, '_blank');
-    setPesanData(
-      pesanData.map((c) =>
-        c.id === activeChat.id
+    const targetMessage = activeChat.messages[activeChat.messages.length - 1];
+    setPesanData((messages) =>
+      messages.map((message) =>
+        message._docId === targetMessage._docId
           ? {
-              ...c,
-              balasan: [...(c.balasan || []), { id: Date.now(), teks: reply, waktu: jam() }],
+              ...message,
+              balasan: [...(message.balasan || []), { id: Date.now(), teks: reply, waktu: jam() }],
             }
-          : c
+          : message
       )
     );
     setReply('');
@@ -46,9 +108,10 @@ export default function PesanAdmin() {
   const handleHapus = (e, chat) => {
     e.stopPropagation();
     if (window.confirm(`Hapus percakapan dengan ${chat.nama}?`)) {
-      const sisa = pesanData.filter((c) => c.id !== chat.id);
-      setPesanData(sisa);
-      if (activeId === chat.id) setActiveId(sisa[0]?.id ?? null);
+      setPesanData((messages) =>
+        messages.filter((message) => getConversationKey(message) !== chat.id)
+      );
+      if (activeId === chat.id) setActiveId(null);
     }
   };
 
@@ -92,7 +155,7 @@ export default function PesanAdmin() {
                   key={chat.id}
                   onClick={() => bukaChat(chat)}
                   className={`group relative p-3.5 rounded-2xl cursor-pointer transition-all border ${
-                    activeId === chat.id
+                    selectedId === chat.id
                       ? 'bg-white border-slate-200 shadow-sm'
                       : 'border-transparent hover:bg-white/60'
                   }`}
@@ -152,9 +215,11 @@ export default function PesanAdmin() {
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
-                      const waNumber = activeChat.hp.startsWith('0')
-                        ? '62' + activeChat.hp.slice(1)
-                        : activeChat.hp;
+                      const waNumber = getWhatsAppNumber(activeChat.hp);
+                      if (!waNumber) {
+                        window.alert('Nomor WhatsApp penanya belum tersedia.');
+                        return;
+                      }
                       window.open(`https://wa.me/${waNumber}`, '_blank');
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-bold text-xs shadow-sm transition-colors"
@@ -166,28 +231,30 @@ export default function PesanAdmin() {
 
               {/* Area Bubble Percakapan */}
               <div className="flex-1 p-6 overflow-y-auto flex flex-col gap-4">
-                {/* Pesan Masuk dari Calon Penyewa */}
-                <div className="bg-white p-4.5 rounded-2xl rounded-tl-xs shadow-sm max-w-[80%] self-start border border-slate-200/80">
-                  <p className="text-xs font-bold text-[#1d3557] mb-1">{activeChat.nama}</p>
-                  <p className="text-sm font-medium text-slate-700 leading-relaxed">
-                    {activeChat.pesan}
-                  </p>
-                  <span className="text-[10px] text-slate-400 font-bold block mt-2 text-right">
-                    {activeChat.waktu}
-                  </span>
-                </div>
+                {activeChat.messages.map((message) => (
+                  <div key={message._docId || message.id} className="contents">
+                    <div className="bg-white p-4.5 rounded-2xl rounded-tl-xs shadow-sm max-w-[80%] self-start border border-slate-200/80">
+                      <p className="text-xs font-bold text-[#1d3557] mb-1">{message.nama}</p>
+                      <p className="text-sm font-medium text-slate-700 leading-relaxed">
+                        {message.pesan}
+                      </p>
+                      <span className="text-[10px] text-slate-400 font-bold block mt-2 text-right">
+                        {message.waktu}
+                      </span>
+                    </div>
 
-                {/* Balasan Admin */}
-                {(activeChat.balasan || []).map((b) => (
-                  <div
-                    key={b.id}
-                    className="bg-[#dcf8c6] p-4.5 rounded-2xl rounded-tr-xs shadow-sm max-w-[80%] self-end border border-emerald-200/60"
-                  >
-                    <p className="text-xs font-bold text-emerald-800 mb-1">Anda (Admin)</p>
-                    <p className="text-sm font-medium text-slate-800 leading-relaxed">{b.teks}</p>
-                    <span className="text-[10px] text-emerald-600 font-bold block mt-2 text-right">
-                      {b.waktu}
-                    </span>
+                    {(message.balasan || []).map((b) => (
+                      <div
+                        key={b.id}
+                        className="bg-[#dcf8c6] p-4.5 rounded-2xl rounded-tr-xs shadow-sm max-w-[80%] self-end border border-emerald-200/60"
+                      >
+                        <p className="text-xs font-bold text-emerald-800 mb-1">Anda (Admin)</p>
+                        <p className="text-sm font-medium text-slate-800 leading-relaxed">{b.teks}</p>
+                        <span className="text-[10px] text-emerald-600 font-bold block mt-2 text-right">
+                          {b.waktu}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -201,14 +268,14 @@ export default function PesanAdmin() {
                   type="text"
                   value={reply}
                   onChange={(e) => setReply(e.target.value)}
-                  placeholder="Ketik balasan untuk dikirimkan melalui WhatsApp..."
+                  placeholder="Ketik balasan untuk dikirimkan ke percakapan..."
                   className="flex-1 bg-slate-50 rounded-xl px-4 py-3 text-sm font-medium outline-none border border-slate-200 focus:border-[#5b738c] focus:bg-white transition-all text-slate-800"
                 />
                 <button
                   type="submit"
-                  className="bg-[#25D366] hover:bg-[#1ebe5d] text-white px-5 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95 flex items-center gap-2 text-sm"
+                  className="bg-[#1d3557] hover:bg-[#152740] text-white px-5 py-3 rounded-xl font-bold shadow-md transition-all active:scale-95 flex items-center gap-2 text-sm"
                 >
-                  <IconSend className="w-4 h-4" /> Balas WA
+                  <IconSend className="w-4 h-4" /> Kirim Balasan
                 </button>
               </form>
             </>

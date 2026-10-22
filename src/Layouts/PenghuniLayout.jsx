@@ -1,10 +1,9 @@
 import { useState, useContext } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { AdminContext } from '../context/AdminContext';
+import { useAuth } from '../context/useAuth';
 import logoNagihin from '../assets/logo.png';
 import { IconGrid, IconWrench, IconUser, IconBook, IconSidebar, IconLogout } from '../components/Icons';
-
-import { KAMAR_PENGHUNI } from '../context/session';
 
 const menus = [
   { to: '/penghuni', label: 'Beranda', icon: <IconGrid />, end: true },
@@ -25,8 +24,12 @@ const Tooltip = ({ text, show }) =>
 export default function PenghuniLayout() {
   const navigate = useNavigate();
   const { kamarData } = useContext(AdminContext);
+  const { profile } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  const saya = kamarData.find((k) => k.kamar === KAMAR_PENGHUNI);
+  const kamarPenghuni = String(
+    profile?.kamar ?? profile?.room ?? profile?.kamar_id ?? profile?.nomor_kamar ?? ''
+  ).trim().replace(/^kamar\s+/i, '');
+  const saya = kamarData.find((k) => k.kamar === kamarPenghuni);
 
   const handleLogout = () => {
     localStorage.removeItem('role');

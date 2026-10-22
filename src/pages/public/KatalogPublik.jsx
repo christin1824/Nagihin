@@ -1,4 +1,6 @@
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { Link } from 'react-router-dom';
 import { AdminContext } from '../../context/AdminContext';
 import logoNagihin from '../../assets/logo.png';
@@ -22,6 +24,19 @@ import {
   IconInfo,
 } from '../../components/Icons';
 import Modal, { Field, inputClass } from '../../components/Modal';
+import { auth, db } from '../../lib/firebase';
+
+const NOMOR_WHATSAPP_PENGELOLA = '6281943376024';
+
+function getPublicChatErrorMessage(error) {
+  if (error?.code === 'auth/admin-restricted-operation') {
+    return 'Chat public belum aktif. Aktifkan Authentication > Sign-in method > Anonymous di Firebase Console.';
+  }
+  if (error?.code === 'permission-denied') {
+    return 'Chat public belum memiliki izin Firestore. Publish firestore.rules terbaru di Firebase Console.';
+  }
+  return `Pesan gagal dikirim: ${error?.message || 'terjadi kesalahan yang tidak diketahui.'}`;
+}
 
 export default function KatalogPublik() {
   const { kamarData, sewaKamarPublik, kirimPesanPublik } = useContext(AdminContext);
@@ -30,7 +45,6 @@ export default function KatalogPublik() {
   const [search, setSearch] = useState('');
   const [tipeFilter, setTipeFilter] = useState('Semua'); // 'Semua' | 'Reguler' | 'VIP'
   const [statusFilter, setStatusFilter] = useState('Semua'); // 'Semua' | 'Kosong'
-  const [maxHarga] = useState(2500000);
 
   // Modal states
   const [selectedKamarDetail, setSelectedKamarDetail] = useState(null);
@@ -53,6 +67,74 @@ export default function KatalogPublik() {
     pesan: '',
   });
   const [chatSuccess, setChatSuccess] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const chatHiddenBeforeRef = useRef(null);
+
+  useEffect(() => {
+    if (!auth || !db) return undefined;
+
+    let unsubscribeMessages = () => {};
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        try {
+          await signInAnonymously(auth);
+        } catch (authError) {
+          console.error('Gagal mengaktifkan sesi chat public.', authError);
+        }
+        return;
+      }
+
+      unsubscribeMessages();
+      const messagesQuery = query(
+        collection(db, 'pesan'),
+        where('clientUid', '==', currentUser.uid),
+      );
+      unsubscribeMessages = onSnapshot(messagesQuery, (snapshot) => {
+        const messages = snapshot.docs
+          .map((messageSnapshot) => ({
+            ...messageSnapshot.data(),
+            _docId: messageSnapshot.id,
+          }))
+          .filter((message) => {
+            if (!chatHiddenBeforeRef.current) return true;
+            const createdAt = Date.parse(message.createdAt || '');
+            return !Number.isNaN(createdAt) && createdAt > chatHiddenBeforeRef.current;
+          })
+          .sort((a, b) => String(a.createdAt ?? '').localeCompare(String(b.createdAt ?? '')));
+        setChatHistory(messages);
+      });
+    });
+
+    return () => {
+      unsubscribeMessages();
+      unsubscribeAuth();
+    };
+  }, []);
+
+  useEffect(() => {
+    const latestMessageAt = chatHistory.reduce((latest, message) => {
+      const messageAt = Date.parse(message.createdAt || '');
+      return Number.isNaN(messageAt) ? latest : Math.max(latest, messageAt);
+    }, 0);
+
+    if (!latestMessageAt) return undefined;
+
+    const clearChat = () => {
+      setIsChatOpen(false);
+      setChatSuccess(false);
+      setChatHistory([]);
+      chatHiddenBeforeRef.current = Date.now();
+    };
+    const remainingTime = 60 * 1000 - (Date.now() - latestMessageAt);
+
+    if (remainingTime <= 0) {
+      clearChat();
+      return undefined;
+    }
+
+    const inactivityTimer = window.setTimeout(clearChat, remainingTime);
+    return () => window.clearTimeout(inactivityTimer);
+  }, [chatHistory]);
 
   // Likes / Favorites simulation
   const [favorites, setFavorites] = useState({});
@@ -62,19 +144,29 @@ export default function KatalogPublik() {
   };
 
   // Filter logic
-  const filteredKamar = kamarData.filter((k) => {
-    const matchSearch =
-      k.kamar.toLowerCase().includes(search.toLowerCase()) ||
-      k.tipe.toLowerCase().includes(search.toLowerCase()) ||
-      k.lantai.toLowerCase().includes(search.toLowerCase()) ||
-      k.fasilitas.some((f) => f.toLowerCase().includes(search.toLowerCase()));
+  const filteredKamar = kamarData
+    .filter((k) => {
+      const matchSearch =
+        k.kamar.toLowerCase().includes(search.toLowerCase()) ||
+        k.tipe.toLowerCase().includes(search.toLowerCase()) ||
+        k.lantai.toLowerCase().includes(search.toLowerCase()) ||
+        k.fasilitas.some((f) => f.toLowerCase().includes(search.toLowerCase()));
 
-    const matchTipe = tipeFilter === 'Semua' || k.tipe === tipeFilter;
-    const matchStatus = statusFilter === 'Semua' || (statusFilter === 'Kosong' && k.status === 'Kosong');
-    const matchHarga = (k.hargaBaku || 1500000) <= maxHarga;
+      const matchTipe = tipeFilter === 'Semua' || k.tipe === tipeFilter;
+      const matchStatus = statusFilter === 'Semua' || (statusFilter === 'Kosong' && k.status === 'Kosong');
 
-    return matchSearch && matchTipe && matchStatus && matchHarga;
-  });
+      return matchSearch && matchTipe && matchStatus;
+    })
+    .sort((a, b) => {
+      const numberA = Number(a.kamar);
+      const numberB = Number(b.kamar);
+
+      if (Number.isNaN(numberA) || Number.isNaN(numberB)) {
+        return a.kamar.localeCompare(b.kamar, 'id', { numeric: true });
+      }
+
+      return numberA - numberB;
+    });
 
   const kamarKosongCount = kamarData.filter((k) => k.status === 'Kosong').length;
 
@@ -106,22 +198,24 @@ export default function KatalogPublik() {
   };
 
   // Handler Chat
-  const handleSubmitChat = (e) => {
+  const handleSubmitChat = async (e) => {
     e.preventDefault();
     if (!chatForm.pesan.trim() || !chatForm.nama.trim()) return;
 
-    kirimPesanPublik({
-      nama: chatForm.nama,
-      hp: chatForm.hp || '08123456789',
-      pesan: chatForm.pesan,
-    });
+    try {
+      const message = {
+        nama: chatForm.nama,
+        hp: chatForm.hp,
+        pesan: chatForm.pesan,
+      };
+      await kirimPesanPublik(message);
 
-    setChatSuccess(true);
-    setTimeout(() => {
-      setChatForm({ nama: '', hp: '', pesan: '' });
+      setChatForm((previousForm) => ({ ...previousForm, pesan: '' }));
+      setChatSuccess(true);
+    } catch (sendError) {
       setChatSuccess(false);
-      setIsChatOpen(false);
-    }, 2500);
+      window.alert(getPublicChatErrorMessage(sendError));
+    }
   };
 
   const bukaChatDenganKamar = (kamarNomor) => {
@@ -475,7 +569,7 @@ export default function KatalogPublik() {
             </p>
             <p className="text-xs text-slate-300 flex items-center gap-2">
               <IconWhatsApp className="w-4 h-4 text-[#80aad3] shrink-0" />
-              <span>WhatsApp Pengelola: +62 812-3456-7890</span>
+              <span>WhatsApp Pengelola: +62 819-4337-6024</span>
             </p>
           </div>
         </div>
@@ -647,7 +741,7 @@ export default function KatalogPublik() {
                   type="button"
                   onClick={() => {
                     const pesan = `Halo Admin Nagih.in, saya baru saja mengajukan sewa untuk Kamar ${bookingKamar.kamar} atas nama ${bookingForm.nama}. Mohon konfirmasi ketersediaan dan cara pembayarannya. Terima kasih!`;
-                    window.open(`https://wa.me/628123456789?text=${encodeURIComponent(pesan)}`, '_blank');
+                    window.open(`https://wa.me/${NOMOR_WHATSAPP_PENGELOLA}?text=${encodeURIComponent(pesan)}`, '_blank');
                   }}
                   className="w-full py-3 px-4 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md transition-all active:scale-95"
                 >
@@ -756,6 +850,24 @@ export default function KatalogPublik() {
                 Halo! Selamat datang di layanan informasi <strong>Nagih.in Kost ITS</strong>. Ada yang bisa kami bantu seputar ketersediaan kamar, survei lokasi, atau fasilitas?
               </div>
 
+              {chatHistory.map((message, index) => (
+                <div key={message._docId || `${message.waktu}-${index}`} className="space-y-2">
+                  <div className="bg-[#3f6593] p-3 rounded-2xl rounded-tr-xs shadow-xs text-xs text-white border border-[#80aad3]/50 self-end ml-8">
+                    <p className="font-bold mb-1">Anda</p>
+                    <p>{message.pesan}</p>
+                  </div>
+                  {(message.balasan || []).map((reply) => (
+                    <div
+                      key={reply.id}
+                      className="bg-[#1b3554] p-3 rounded-2xl rounded-tl-xs shadow-xs text-xs text-[#c0e6fd] border border-[#3f6593]/50 self-start mr-8"
+                    >
+                      <p className="font-bold mb-1">Pengelola</p>
+                      <p>{reply.teks}</p>
+                    </div>
+                  ))}
+                </div>
+              ))}
+
               {/* Quick Prompt Suggestions */}
               <div className="space-y-1.5 pt-1">
                 <p className="text-[10px] font-bold text-[#80aad3] uppercase tracking-wider">Pertanyaan Cepat:</p>
@@ -796,7 +908,8 @@ export default function KatalogPublik() {
                 />
                 <input
                   type="tel"
-                  placeholder="WhatsApp (Opsional)"
+                  required
+                  placeholder="WhatsApp Anda"
                   className="w-full bg-[#000f22] border border-[#3f6593] rounded-xl px-3 py-2 text-xs font-medium text-[#c0e6fd] placeholder-[#80aad3]/60 outline-none focus:border-[#80aad3]"
                   value={chatForm.hp}
                   onChange={(e) => setChatForm({ ...chatForm, hp: e.target.value })}
@@ -826,7 +939,7 @@ export default function KatalogPublik() {
                   type="button"
                   onClick={() => {
                     const text = chatForm.pesan || 'Halo Pengelola Nagih.in Kost ITS, saya mau tanya ketersediaan kamar.';
-                    window.open(`https://wa.me/628123456789?text=${encodeURIComponent(text)}`, '_blank');
+                    window.open(`https://wa.me/${NOMOR_WHATSAPP_PENGELOLA}?text=${encodeURIComponent(text)}`, '_blank');
                   }}
                   className="text-[11px] font-bold text-[#80aad3] hover:text-[#c0e6fd] hover:underline inline-flex items-center gap-1.5"
                 >

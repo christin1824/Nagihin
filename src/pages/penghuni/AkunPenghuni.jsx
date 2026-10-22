@@ -1,6 +1,6 @@
 import { useContext, useState } from 'react';
 import { AdminContext } from '../../context/AdminContext';
-import { KAMAR_PENGHUNI, getPassword, setPassword } from '../../context/session';
+import { useAuth } from '../../context/useAuth';
 import { Field, inputClass, primaryBtn } from '../../components/Modal';
 import { IconCheck } from '../../components/Icons';
 
@@ -13,35 +13,61 @@ const Alert = ({ m }) =>
 
 export default function AkunPenghuni() {
   const { kamarData, setKamarData, showToast } = useContext(AdminContext);
-  const saya = kamarData.find((k) => k.kamar === KAMAR_PENGHUNI);
+  const { profile, updatePhone, changePassword } = useAuth();
+  const kamarPenghuni = String(
+    profile?.kamar ?? profile?.room ?? profile?.kamar_id ?? profile?.nomor_kamar ?? ''
+  ).trim().replace(/^kamar\s+/i, '');
+  const saya = kamarData.find((k) => k.kamar === kamarPenghuni);
 
-  const [hp, setHp] = useState(saya?.hp || '');
+  const [hp, setHp] = useState(() => saya?.hp || profile?.hp || '');
   const [pwd, setPwd] = useState({ lama: '', baru: '', konfirmasi: '' });
   const [pesan, setPesan] = useState({ hp: null, pwd: null }); // { type: 'ok' | 'err', text }
 
-  const simpanHp = (e) => {
+  const simpanHp = async (e) => {
     e.preventDefault();
-    setKamarData(kamarData.map((k) => (k.kamar === KAMAR_PENGHUNI ? { ...k, hp } : k)));
-    setPesan({ ...pesan, hp: { type: 'ok', text: 'Nomor telepon berhasil diperbarui.' } });
-    showToast('Nomor WhatsApp Anda berhasil diperbarui!', 'success');
+    try {
+      await updatePhone(hp);
+      await setKamarData(kamarData.map((k) => (k.kamar === kamarPenghuni ? { ...k, hp } : k)));
+      setPesan((previousPesan) => ({ ...previousPesan, hp: { type: 'ok', text: 'Nomor telepon berhasil diperbarui.' } }));
+      showToast('Nomor WhatsApp Anda berhasil diperbarui!', 'success');
+    } catch (saveError) {
+      const message = saveError.code === 'permission-denied'
+        ? 'Izin ditolak. Publish firestore.rules terbaru, lalu logout dan login kembali.'
+        : saveError.message;
+      setPesan((previousPesan) => ({ ...previousPesan, hp: { type: 'err', text: message } }));
+      showToast(`Gagal menyimpan nomor: ${message}`, 'error');
+    }
   };
 
-  const simpanPwd = (e) => {
+  const simpanPwd = async (e) => {
     e.preventDefault();
-    let err = null;
-    if (pwd.lama !== getPassword()) err = 'Password lama salah.';
-    else if (pwd.baru.length < 6) err = 'Password baru minimal 6 karakter.';
-    else if (pwd.baru !== pwd.konfirmasi) err = 'Konfirmasi password tidak cocok.';
-
-    if (err) {
-      setPesan({ ...pesan, pwd: { type: 'err', text: err } });
-      showToast(err, 'error');
+    if (pwd.baru.length < 6) {
+      setPesan((previousPesan) => ({ ...previousPesan, pwd: { type: 'err', text: 'Password baru minimal 6 karakter.' } }));
+      showToast('Password baru minimal 6 karakter.', 'error');
       return;
     }
-    setPassword(pwd.baru);
-    setPwd({ lama: '', baru: '', konfirmasi: '' });
-    setPesan({ ...pesan, pwd: { type: 'ok', text: 'Password berhasil diubah.' } });
-    showToast('Password akun berhasil diperbarui!', 'success');
+    if (pwd.baru !== pwd.konfirmasi) {
+      setPesan((previousPesan) => ({ ...previousPesan, pwd: { type: 'err', text: 'Konfirmasi password tidak cocok.' } }));
+      showToast('Konfirmasi password tidak cocok.', 'error');
+      return;
+    }
+    try {
+      await changePassword(pwd.lama, pwd.baru);
+      setPwd({ lama: '', baru: '', konfirmasi: '' });
+      setPesan((previousPesan) => ({ ...previousPesan, pwd: { type: 'ok', text: 'Password berhasil diubah.' } }));
+      showToast('Password akun berhasil diperbarui!', 'success');
+    } catch (saveError) {
+      const message = saveError.code === 'auth/invalid-credential'
+        || saveError.code === 'auth/wrong-password'
+        ? 'Password lama salah. Gunakan password yang dipakai saat login ke akun ini.'
+        : saveError.code === 'auth/requires-recent-login'
+          ? 'Sesi login sudah lama. Silakan logout lalu login kembali sebelum mengganti password.'
+          : saveError.code === 'auth/weak-password'
+            ? 'Password baru terlalu lemah.'
+            : saveError.message;
+      setPesan((previousPesan) => ({ ...previousPesan, pwd: { type: 'err', text: message } }));
+      showToast(message, 'error');
+    }
   };
 
 
@@ -62,7 +88,7 @@ export default function AkunPenghuni() {
             </div>
             <div>
               <p className="text-lg font-extrabold text-[#1d3557]">{saya?.nama}</p>
-              <p className="text-sm text-gray-500 font-medium">Kamar {KAMAR_PENGHUNI} · penghuni@gmail.com</p>
+              <p className="text-sm text-gray-500 font-medium">Kamar {kamarPenghuni} · {profile?.email || '-'}</p>
             </div>
           </div>
           <h3 className="text-xl font-extrabold text-[#1d3557]">Nomor Telepon</h3>

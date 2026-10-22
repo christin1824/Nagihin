@@ -9,6 +9,16 @@ export default function DashboardAdmin() {
   const kamarKosong = kamarData.filter((k) => k.status === 'Kosong').length;
   const kamarTerisi = kamarData.filter((k) => k.status === 'Terisi').length;
   const belumBayar = kamarData.filter((k) => k.bayar === 'Belum Bayar').length;
+  const sortedKamarData = [...kamarData].sort((a, b) => {
+    const numberA = Number(a.kamar);
+    const numberB = Number(b.kamar);
+
+    if (Number.isNaN(numberA) || Number.isNaN(numberB)) {
+      return a.kamar.localeCompare(b.kamar, 'id', { numeric: true });
+    }
+
+    return numberA - numberB;
+  });
 
   const getStatusStyle = (bayarStatus) => {
     switch (bayarStatus) {
@@ -59,7 +69,7 @@ export default function DashboardAdmin() {
         </div>
 
         <div className="grid grid-cols-5 gap-4">
-          {kamarData.map((room) => (
+          {sortedKamarData.map((room) => (
             <div key={room.kamar} className={`${getStatusStyle(room.bayar)} rounded-xl p-3 flex flex-col items-center justify-center h-24 transition-all duration-200 hover:scale-105 cursor-pointer`}>
               <span className="font-extrabold text-2xl mb-0.5">{room.kamar}</span>
               <span className="text-xs font-bold tracking-wide">{room.bayar === 'Kosong' ? 'Kosong' : room.bayar}</span>

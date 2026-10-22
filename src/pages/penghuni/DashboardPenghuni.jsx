@@ -1,7 +1,7 @@
 import { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AdminContext } from '../../context/AdminContext';
-import { KAMAR_PENGHUNI } from '../../context/session';
+import { useAuth } from '../../context/useAuth';
 import { IconDollar, IconBed, IconWrench, IconBook, IconCheck, IconMegaphone, IconPrinter } from '../../components/Icons';
 import KwitansiModal from '../../components/KwitansiModal';
 
@@ -30,10 +30,14 @@ const CardHeader = ({ icon, title }) => (
 );
 
 export default function DashboardPenghuni() {
-  const { kamarData, setKamarData, tiketData, pengumumanData, showToast, bulanSemasa } = useContext(AdminContext);
+  const { kamarData, tiketData, pengumumanData, showToast, bulanSemasa } = useContext(AdminContext);
+  const { profile } = useAuth();
   const [bukaKwitansi, setBukaKwitansi] = useState(false);
+  const kamarPenghuni = String(
+    profile?.kamar ?? profile?.room ?? profile?.kamar_id ?? profile?.nomor_kamar ?? ''
+  ).trim().replace(/^kamar\s+/i, '');
 
-  const saya = kamarData.find((k) => k.kamar === KAMAR_PENGHUNI);
+  const saya = kamarData.find((k) => k.kamar === kamarPenghuni);
 
   if (!saya || saya.status !== 'Terisi') {
     return (
@@ -46,7 +50,7 @@ export default function DashboardPenghuni() {
   const lunas = saya.bayar === 'Lunas';
   const sisaHari = hitungSisaHari(saya.tempo);
   const terlambat = !lunas && sisaHari !== null && sisaHari < 0;
-  const tiketSaya = tiketData.filter((t) => t.kamar === KAMAR_PENGHUNI);
+  const tiketSaya = tiketData.filter((t) => String(t.kamar ?? t.kamar_id ?? '') === kamarPenghuni);
   const tiketAktif = tiketSaya.filter((t) => t.status !== 'Selesai').length;
   const pengumumanAktif = (pengumumanData || []).filter((p) => p.aktif);
 
@@ -57,32 +61,21 @@ export default function DashboardPenghuni() {
       : { text: 'text-[#a12020]', soft: 'bg-[#fc9292]/20 border-[#a12020]/20', label: 'Belum Bayar' };
 
   const handleBayarSekarang = () => {
-    const tanggalHariIni = new Date().toLocaleDateString('id-ID', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-    setKamarData((prev) =>
-      prev.map((k) =>
-        k.kamar === saya.kamar
-          ? {
-              ...k,
-              bayar: 'Lunas',
-              riwayatPembayaran: [
-                ...(k.riwayatPembayaran || []),
-                {
-                  id: Date.now(),
-                  tanggalBayar: tanggalHariIni,
-                  jumlahBayar: k.jumlah,
-                  metode: 'Transfer Bank / QRIS',
-                  catatan: `Pembayaran sewa periode ${bulanSemasa}`,
-                },
-              ],
-            }
-          : k
-      )
-    );
-    showToast(`Pembayaran Kamar ${saya.kamar} berhasil diverifikasi! Kwitansi digital siap dicetak.`, 'success');
+    const jumlahTagihan = Number(saya.jumlah || saya.hargaBaku || 0).toLocaleString('id-ID');
+    const pesanWhatsApp = [
+      'Halo Pengelola Nagih.in Kost,',
+      '',
+      'Saya ingin mengirim bukti pembayaran sewa:',
+      `Nama: ${saya.nama}`,
+      `Nomor kamar: ${saya.kamar}`,
+      `Periode: ${bulanSemasa}`,
+      `Nominal: Rp ${jumlahTagihan}`,
+      '',
+      'Bukti pembayaran saya lampirkan di chat ini. Mohon dikonfirmasi, terima kasih.',
+    ].join('\n');
+    const nomorPengelola = '6281943376024';
+    window.open(`https://wa.me/${nomorPengelola}?text=${encodeURIComponent(pesanWhatsApp)}`, '_blank');
+    showToast('WhatsApp pengelola dibuka. Silakan lampirkan bukti pembayaran sebelum mengirim.', 'success');
   };
 
   return (

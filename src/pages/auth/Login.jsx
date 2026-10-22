@@ -16,8 +16,8 @@ export default function Login() {
     setError('');
     setIsSubmitting(true);
     try {
-      await login(email, password);
-      navigate('/admin');
+      const { profile } = await login(email, password);
+      navigate(profile?.role === 'admin' ? '/admin' : '/penghuni');
     } catch (loginError) {
       setError(loginError.code === 'auth/invalid-credential'
         ? 'Email atau password salah.'
