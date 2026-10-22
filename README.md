@@ -1,6 +1,6 @@
 # Nagih.in
 
-Nagih.in adalah aplikasi manajemen kost full-stack. Frontend dibuat dengan
+Nagih.in adalah aplikasi manajemen kost. Frontend dibuat dengan
 React dan Vite, sedangkan backend dibuat dengan Node.js dan Express.
 Frontend berkomunikasi dengan backend melalui REST API. Backend menggunakan
 Firebase Admin SDK untuk memverifikasi autentikasi dan mengakses Cloud
